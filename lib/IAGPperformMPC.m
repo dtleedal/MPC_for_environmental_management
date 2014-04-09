@@ -261,6 +261,7 @@ else % do MPC
     Data.all_forcings(time_index,5) = f_aero;
     
     %% set Data.PI_bl(time_index) and check if update is required
+    % Unstable. Don't use until further developement
     if Param.use_PI_updating
         if find(Data.PI_update_schedule(:,1) == year,1) > 1
             disp('Performing an update of Param.PI_bl...')
@@ -412,7 +413,7 @@ else % do MPC
         % extract NH and SH forcings and multiply by 2
         NH_SH_forcing_times_2 = Data.all_forcings(time_index,10:11)'.*2;
         %
-        % The function template is:
+        % The function signature is:
         % [X_k, Y_k] = stateSpaceSim(X_k_1,U_k,Param.dt,Param.A,Param.B,Param.C,Param.D)
         [last_state, Y_hat_k] = stateSpaceSim(Data.all_X_states(:,time_index-1,mc), NH_SH_forcing_times_2, Param.dt,...
             Param.A(:,:,mc),Param.B(:,:,mc),Param.C(:,:,mc),Param.D(:,:,mc));

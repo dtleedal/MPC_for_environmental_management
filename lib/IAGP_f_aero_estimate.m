@@ -160,11 +160,11 @@ Faero_ensemble = zeros(length(L),length(Fghg));
 % Then make one Monte Carlo ensemble per MAGICC model of estimates for Faero
 %net_TOA = dir_aero(time_ind) + f_ghg + phi_bl_test.*NH_so2 - lambda_delta_T - delta_SI(time_ind);
 for i = 1:length(two_x_CO2_eq_T)
-    DT_NH = ((the_observations(:,1)+offset).*(1./a_g_NH(:,i)))-10;
-    DT_SH = ((the_observations(:,2)+offset).*(1./a_g_SH(:,i)))-10;
+    DT_NH = ((the_observations(:,1)+offset).*(1./a_g_NH(:,i)))-offset;
+    DT_SH = ((the_observations(:,2)+offset).*(1./a_g_SH(:,i)))-offset;
     DT = mean([DT_NH DT_SH],2);
     for j = 1:length(DT)
-        Faero_ensemble(i,j) = (N(j) - Fghg(j) - Fv(j) -(Emis(j).*phi_bl)./2 + L(i).*DT(j) + (SW_out(j) - SO_initial));%(albedo(j)-.29)*SI(j);
+        Faero_ensemble(i,j) = (N(j) - Fghg(j) - Fv(j) -(Emis(j).*phi_bl) + L(i).*DT(j) + (SW_out(j) - SO_initial));%(albedo(j)-.29)*SI(j);
     end
     Faero = sum(Faero_ensemble,1)./length(two_x_CO2_eq_T);
 end
