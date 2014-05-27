@@ -189,9 +189,9 @@ Param.offset = 10; % (10)
 
 % switch for which type of volcano input
 % 1 = Tg stratospheric injection
-% 2 = volcanic dust index
+% 2 = optical depth
 % ~=(1 or 2) sets all volcanic forcing to zero
-Param.use_volcano = 1; 
+Param.use_volcano = 2; 
 Param.volcanic_residence_time = 1; % (1)
 
 if Param.use_volcano == 1
@@ -199,7 +199,7 @@ if Param.use_volcano == 1
     % so we use the same forcing coef as for geoengineering SO2
     Param.volcanic_forcing_coef = Param.phi_bl;
 elseif Param.use_volcano == 2
-    % volcano input specifies a dust index
+    % volcano input specifies as an hemispheric optical depth
     Param.volcanic_forcing_coef = -24;
 else
     % volcano input is not used
