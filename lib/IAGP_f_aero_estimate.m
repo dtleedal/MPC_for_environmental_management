@@ -94,7 +94,7 @@ function [H, f_aero] = IAGP_f_aero_estimate( year,...
 Fghg = all_forcings(:,1); % GHG forcing
 Fv_NH = all_forcings(:,8); % NH volcanic forcing
 Fv_SH = all_forcings(:,9); % SH volcanic forcing
-Fv = Fv_NH + Fv_SH;
+Fv = (Fv_NH + Fv_SH)./2; % global volcanic forcing
 SW_in = all_forcings(:,2);   % SW down (into Earth)
 SW_out = all_forcings(:,3);   % SW up (out to space)
 N = all_forcings(:,4);    % net TOA forcing
@@ -137,7 +137,7 @@ Emis = all_SO2;
 
 % define the 5 values of Lambda used by the 10 MAGICC models
 % the numbers from 4.3193 to 2.0436 are the 2xCO2 eq. sensitivity
-L = 3.74./two_x_CO2_eq_T;
+L = 3.7./two_x_CO2_eq_T;
 
 % pre-assign memory for MC ensemble
 % Faero_ensemble = zeros(num_of_MC,length(DT));
@@ -160,11 +160,14 @@ Faero_ensemble = zeros(length(L),length(Fghg));
 % Then make one Monte Carlo ensemble per MAGICC model of estimates for Faero
 %net_TOA = dir_aero(time_ind) + f_ghg + phi_bl_test.*NH_so2 - lambda_delta_T - delta_SI(time_ind);
 for i = 1:length(two_x_CO2_eq_T)
-    DT_NH = ((the_observations(:,1)+offset).*(1./a_g_NH(:,i)))-offset;
-    DT_SH = ((the_observations(:,2)+offset).*(1./a_g_SH(:,i)))-offset;
+%     DT_NH = ((the_observations(:,1)+offset).*(1./a_g_NH(:,i)))-offset;
+%     DT_SH = ((the_observations(:,2)+offset).*(1./a_g_SH(:,i)))-offset;
+    DT_NH = the_observations(:,1);
+    DT_SH = the_observations(:,2);
+
     DT = mean([DT_NH DT_SH],2);
     for j = 1:length(DT)
-        Faero_ensemble(i,j) = (N(j) - Fghg(j) - Fv(j) -(Emis(j).*phi_bl) + L(i).*DT(j) + (SW_out(j) - SO_initial));%(albedo(j)-.29)*SI(j);
+        Faero_ensemble(i,j) = (N(j) - Fghg(j) - Fv(j) -(Emis(j).*phi_bl)/2 + L(i).*DT(j) + (SW_out(j) - SO_initial));%(albedo(j)-.29)*SI(j);
     end
     Faero = sum(Faero_ensemble,1)./length(two_x_CO2_eq_T);
 end

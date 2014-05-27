@@ -286,13 +286,15 @@ else % do MPC
     Data.all_forcings(time_index,6:7) = Param.phi_bl.*[NH_SO2_emission SH_SO2_emission];
     
     %% filter the volcano series en-bloc
-    % only do this if Param.use_volcano is set otherwise leave volcanic
+    % only do this if Param.use_volcano is set to 1 (Tg of SO2 injection)
+    % or 2 (volcanic dust index)
+    % otherwise leave volcanic
     % forcing value at 0
     % NH volcanoes
-    if Param.use_volcano == 1
-    Data.all_forcings(:,8) = Param.phi_bl.*(filter(1-exp(-1/Param.volcanic_residence_time),[1 -exp(-1/Param.volcanic_residence_time)],Data.the_volcanoes(:,1)));
-    % SH volcanoes
-    Data.all_forcings(:,9) = Param.phi_bl.*(filter(1-exp(-1/Param.volcanic_residence_time),[1 -exp(-1/Param.volcanic_residence_time)],Data.the_volcanoes(:,2)));
+    if (Param.use_volcano == 1) || (Param.use_volcano == 2) 
+        Data.all_forcings(:,8) = Param.volcanic_forcing_coef.*(filter(1-exp(-1/Param.volcanic_residence_time),[1 -exp(-1/Param.volcanic_residence_time)],Data.the_volcanoes(:,1)));
+        % SH volcanoes
+        Data.all_forcings(:,9) = Param.volcanic_forcing_coef.*(filter(1-exp(-1/Param.volcanic_residence_time),[1 -exp(-1/Param.volcanic_residence_time)],Data.the_volcanoes(:,2)));
     end
         
     
@@ -400,22 +402,13 @@ else % do MPC
         %% state space simulation
         
         
-        %    * * * * * * * * * * * * * * * * * * * * * * * * * *
-        %    *                                                 *
-        %    *                 **IMPORTANT**                   *
-        %    *           THE FORCINGS ALL HAVE TO BE           *
-        %    *                 MULTIPLIED BY 2                 *
-        %    *           BECAUSE OF THE WAY MAGICC             *
-        %    *            DEFINES THE HEMISPHERES              *
-        %    *                                                 *
-        %    * * * * * * * * * * * * * * * * * * * * * * * * * *
         
-        % extract NH and SH forcings and multiply by 2
-        NH_SH_forcing_times_2 = Data.all_forcings(time_index,10:11)'.*2;
+        % extract NH and SH forcings
+        NH_SH_forcing = Data.all_forcings(time_index,10:11)';
         %
         % The function signature is:
         % [X_k, Y_k] = stateSpaceSim(X_k_1,U_k,Param.dt,Param.A,Param.B,Param.C,Param.D)
-        [last_state, Y_hat_k] = stateSpaceSim(Data.all_X_states(:,time_index-1,mc), NH_SH_forcing_times_2, Param.dt,...
+        [last_state, Y_hat_k] = stateSpaceSim(Data.all_X_states(:,time_index-1,mc), NH_SH_forcing, Param.dt,...
             Param.A(:,:,mc),Param.B(:,:,mc),Param.C(:,:,mc),Param.D(:,:,mc));
         
         
@@ -495,8 +488,8 @@ else % do MPC
             
             Xpars = fminsearchbnd('IAGP_optimize_SO2',X0,LB,UB,OPTIONS,...
                 Param.A(:,:,mc),Param.B(:,:,mc),Param.C(:,:,mc),Param.D(:,:,mc),...
-                Data.all_forcings(:,10:11).*2,... % NH and SH total forcing
-                Data.all_NH_SO2.*2,...
+                Data.all_forcings(:,10:11),... % NH and SH total forcing
+                Data.all_NH_SO2,...
                 Data.all_X_states(:,:,mc),...
                 Data.all_Y_states(:,:,mc),...
                 Param.optimize_weights,...
@@ -517,9 +510,9 @@ else % do MPC
             % ----------------------
             %try
             the_ice_single = IAGP_get_n_step_ice...
-                (Xpars,...% these are the SO2 emissions (already *2)
+                (Xpars,...% these are the SO2 emissions
                 Param.A(:,:,mc),Param.B(:,:,mc),Param.C(:,:,mc),Param.D(:,:,mc),...
-                Data.all_forcings(:,10:11).*2,... % NH and SH total forcing
+                Data.all_forcings(:,10:11),... % NH and SH total forcing
                 Data.all_X_states(:,:,mc),...
                 Data.all_Y_states(:,:,mc),...
                 g_k_NH,...
@@ -534,8 +527,8 @@ else % do MPC
             %    error('Failed during call to Data.all_ice_states')
             %end
             % ----------------------
-            half_Xpars = Xpars./2; % all optimal emissions are twice the real size
-            % due to MagicC splitting the forcing
+            
+            
             
             %% make text output formatting strings
             
@@ -546,7 +539,7 @@ else % do MPC
             
             text_string0 = sprintf(['Assumed forcing:    ' float_format_Nplus1], Data.all_forcings(time_index:time_index+Param.N,10));
             disp(text_string0)
-            text_string1 = sprintf(['Optimal emissions:  ' float_format_Nplus1], [Data.all_NH_SO2(time_index,1) half_Xpars']);
+            text_string1 = sprintf(['Optimal emissions:  ' float_format_Nplus1], [Data.all_NH_SO2(time_index,1) Xpars']);
             disp(text_string1)
             text_string2 = sprintf(['Modelled ice path:  ' float_format_Nplus1], [this_obs(end) the_ice_single]);
             disp(text_string2)
@@ -557,7 +550,7 @@ else % do MPC
             disp(text_string4)
             text_string5 = sprintf(['Modelled IofE:      ' float_format_Nplus1], cumsum(error_path));
             disp(text_string5)
-            Data.all_NH_SO2(time_index+1,2:end,mc) = half_Xpars;% this is the emissions for the real-word i.e., MagicC-derived divided by 2
+            Data.all_NH_SO2(time_index+1,2:end,mc) = Xpars;% this is the emissions for the real-word
             
             
             

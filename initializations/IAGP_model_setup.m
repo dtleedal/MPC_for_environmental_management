@@ -12,6 +12,7 @@ function Param = IAGP_model_setup(base_directory,project_name)
 % 3-Sep-2013
 %
 % 
+%
 
 disp(['project name: '  project_name])
 
@@ -38,6 +39,9 @@ Param.use_diary_flag = 0;
 
 %% use performance weighting flag
 Param.use_weighting = 1;
+%% define initial estimate of NH temp to sea ice and emissions to forcing coefficients
+Param.PI_bl = -2.1;  % (-2.1)  temp --> sea ice
+Param.phi_bl = -0.16; % (-0.16) emissions to forcing
 
 %% set fitted DI_des parameters and flag
 % if the use_fitted_DI_des_flag is set to 0 then there must be a target
@@ -66,19 +70,27 @@ Param.integral_wind_up_limit = 50; % (50)
 %% define the optimization weights
 Param.optimize_weights.w1 = 100; % error between ice and target (100)
 Param.optimize_weights.w2 = 1; % smoothness of ice (1)
-Param.optimize_weights.w3 = 0; % integral of error (100)
+Param.optimize_weights.w3 = 100; % integral of error (100)
 Param.optimize_weights.w4 = 0; % target overshoot changed from zero in 2044 (0)
 Param.optimize_weights.w5 = 0.05; % smoothness of emissions (0.05)
 %% Set whether to use the present observation in the optimization
 % if this is set to 0 then it's possible to do a true model inversion run
-Param.use_last_observation = 0;
-%% define size of model ensemble
+Param.use_last_observation = 1;
+%% Define size of model ensemble and the emergent properties of the models
 % this must be an even number and be at least 4 preferably around 10
-% if you use 10 models the model ensemble will have:
-% two_x_CO2_eq_T: [4.3192 3.3798 2.7993 2.4027 2.1132 4.3196 3.3798 2.7993 2.4027 2.1132]
-% trans_clim_response: [2.5306 2.1964 1.9464 1.7520 1.5959 2.3223 2.0470 1.8346 1.6652 1.5268]
 
-Param.n_model = 1;
+% This section sets the 2 x CO2 eq. clim. sens. and trans. clim. resp. for the control model
+% ensemble. The values are used later when specifying the feedback parameters for land and ocean, the ocean
+% diffusivity, the downwelling, and the ratio of land to ocean equilibrium temperature (RLO)  parameters for MagicC.
+% The functions attempt to find values for these 4 MagicC parameters that will achieve the specfied
+% 2 x CO2 eq. clim. sens. and trans. clim. resp. for each of the control models
+Param.n_model = 10;
+Param.two_x_CO2_eq_T = repmat(linspace(2.5,3.5,Param.n_model/2),1,2);
+Param.trans_clim_response = [Param.two_x_CO2_eq_T(1:Param.n_model/2).*0.5 Param.two_x_CO2_eq_T(Param.n_model/2+1:end).*0.6];
+Param.RLO = [1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2];
+if (length(Param.two_x_CO2_eq_T) ~= Param.n_model) || (length(Param.trans_clim_response) ~= Param.n_model)
+    error('number of models does not match number of eq. sens. or tcr values')
+end
 
 %% define length of forecast horizon
 % MPC uses a prediction horizon at each year step looking forward N steps
@@ -124,7 +136,7 @@ Param.Faero_instruments_begin = 1995;
 % (1) continue to use linear relation to ghg forcing
 % (2) use estimate based on instrumental data and observed temperature
 % (3) use a pre-specified value
-Param.which_f_aero_to_use = 3;
+Param.which_f_aero_to_use = 2;
 % set value to use if option 3 above
 Param.f_aero_pre_specified = -1.1; % -0.5 is a sensible value
 
@@ -137,12 +149,6 @@ Param.SW_out_initial = 99.035; % (99.035) W/m^2 used to calculate albedo-induced
 %% the NH SH difference function
 % NH_SH_difference = [-1.7282 -0.9875 -0.2071]; in development
 
-%% define initial estimate of NH temp to sea ice coefficient
-% and emissions to forcing coefficient
-Param.PI_bl = -2.1;  % (-2.1)  temp --> sea ice
-Param.phi_bl = -0.2; % (-0.16) emissions to forcing
-
-
 %% now define schedule and space for node values for time-varying PI_bl
 % first year should be first year of simulation
 Param.use_PI_updating = 0; % keep switched off - in development!
@@ -154,10 +160,10 @@ Param.I_weight = 1;
 Param.D_weight = 1;
 %% adaptive gain parameters
 % switch for temperature adaptive gain
-Param.use_T_adaptive_gain_flag = 0;
+Param.use_T_adaptive_gain_flag = 1;
 
 % switch for sea ice adaptive gain
-Param.use_SI_adaptive_gain_flag = 0;
+Param.use_SI_adaptive_gain_flag = 1;
 
 % NVR for temperature adaptive gain
 Param.a_g_NVR_T = 0.00000001; % (0.00005) the larger the more quickly the parameter can change
@@ -175,18 +181,32 @@ Param.P_k_0 = 10; % (10)
 % adaptive gain doesn't work close to zero so always add on this then subtract 
 Param.offset = 10; % (10) 
 
-%% the volcanic emissions residence time (e-folding time) in years
-% (1) calculate a volcanic forcing value based on size of volcanic event
-% and residence time
-% (not 1) assume volcanic forcing is always zero
-Param.use_volcano = 0; 
+%% Specify how volcanoes are treated
+% The volcanic input can be in one of two forms:
+% (1) a Tg value of stratospheric injection as used by Leeds
+% (2) a volcanic dust index as used by Ben Kravitz
+% Both methods have an equal residence time (e-folding time) in years
+
+% switch for which type of volcano input
+% 1 = Tg stratospheric injection
+% 2 = volcanic dust index
+% ~=(1 or 2) sets all volcanic forcing to zero
+Param.use_volcano = 1; 
 Param.volcanic_residence_time = 1; % (1)
 
+if Param.use_volcano == 1
+    % volcano input specifies a Tg of stratospheric input
+    % so we use the same forcing coef as for geoengineering SO2
+    Param.volcanic_forcing_coef = Param.phi_bl;
+elseif Param.use_volcano == 2
+    % volcano input specifies a dust index
+    Param.volcanic_forcing_coef = -24;
+else
+    % volcano input is not used
+    Param.volcanic_forcing_coef = 0;
+end
 
-%% define MagicC discretisation parameters
-Param.nL = 40;    % number of ocean layers
-Param.dt = 0.1;   % fraction of year for time step
-Param.dz = 100;   % depth of ocean layers
+
 
 %% define plant failure via weibul parameters
 Param.use_plant_failure = 0; % flag to use or by-pass plant failure mode 
@@ -196,101 +216,27 @@ Param.weibul_b = 2;     % (2)
 %% choose whether to make file backups (faster without)
 Param.do_backup = 0;
 
-%% Physical parameters for MagicC
-fnl_bl = 0.42;                      % fraction NH land baseline
-fnl_dist = 1;                       % (1) uniform distribution
-fnl_spread = 0;                    % +/- 10 percent range
-fnl = IAGP_return_MC_par(Param.n_model,fnl_bl,fnl_dist,fnl_spread);
+%% Fixed physical parameters for MagicC
+fnl = 0.42;                         % fraction NH land baseline
+fno = 1-fnl;                        % NH ocean fraction (1 - northern hemisphere land)
+fsl = 0.21;                         % fraction SH land
+fso = 1-fsl;                        % SH ocean fraction (1 - southern hemisphere land)
+klo = 1;                            % flux coefficient land/ocean (W/m^2/C)
+kns = 1;                            % flux coefficient north/south (W/m^2/C)
 
-fsl_bl = 0.21;                      % fraction SH land
-fsl_dist = 1;                       % uniform
-fsl_spread = 0;                    % +/- 10%
-fsl = IAGP_return_MC_par(Param.n_model,fsl_bl,fsl_dist,fsl_spread);
-
-
-klo_bl = 1;                         % flux coefficient land/ocean (W/m^2/C)
-klo_dist = 1;                       % uniform
-klo_spread = 0;                    % +/- 10%
-klo = IAGP_return_MC_par(Param.n_model,klo_bl,klo_dist,klo_spread);
-
-
-kns_bl = 1;                         % flux coefficient north/south (W/m^2/C)
-kns_dist = 1;                       % uniform
-kns_spread = 0;                    % +/- 10%
-kns = IAGP_return_MC_par(Param.n_model,kns_bl,kns_dist,kns_spread);
-
-
-ll_bl = 0.716;                      % land longwave outgoing feedback parameter (W/m^2/C)
-ll_dist = 1;                        % uniform
-ll_spread = 30;                     % +/- 10%
-if Param.n_model > 1 % make spread of models
-ll = [linspace(ll_bl*(100-ll_spread)/100,ll_bl*(100+2.*ll_spread)/100,Param.n_model./2) linspace(ll_bl*(100-ll_spread)/100,ll_bl*(100+2.*ll_spread)/100,Param.n_model./2)];
-else
-    ll = ll_bl; % use single value
-end
-lo_bl = 3.648;                      % ocean longwave outgoing feedback parameter (W/m^2/C)
-lo_dist = 1;                        % uniform
-lo_spread = 30;                     % +/- 10%
-%lo = IAGP_return_MC_par(Param.n_model,lo_bl,lo_dist,lo_spread);
-if Param.n_model > 1 % make spread of models
-lo = [linspace(lo_bl*(100-lo_spread)/100,lo_bl*(100+2.*lo_spread)/100,Param.n_model./2) linspace(lo_bl*(100-lo_spread)/100,lo_bl*(100+2.*lo_spread)/100,Param.n_model./2)];
-else
-    lo = lo_bl; % use single value
-end
-hm_bl = 90;                         % depth of mixed layer (m)
-hm_dist = 1;                        % uniform
-hm_spread = 0;                     % +/- 10%
-hm = IAGP_return_MC_par(Param.n_model,hm_bl,hm_dist,hm_spread);
+hm = 90;                            % depth of mixed layer (m)
 
 rho = 1025.98;                      % density of sea water (kg/m3)
 cp = 3989.8;                        % specific heat capacity of sea water (J/kg)
+cm = rho*cp.*hm./3600/24/365;       % effective bulk heat capacity of mixed layer (W*year/m^2/C)
 
-diffusivity_bl = 2.547e-2;           % diffusivity parameter
-diffusivity_dist = 1;               % uniform
-diffusivity_spread = 20;             % +/- 5%
-%diffusivity = IAGP_return_MC_par(n_model,diffusivity_bl,diffusivity_dist,diffusivity_spread);
-%diffusivity = [linspace(diffusivity_bl*(100-diffusivity_spread)/100,diffusivity_bl*(100+diffusivity_spread)/100,5) linspace(diffusivity_bl*(100-diffusivity_spread)/100,diffusivity_bl*(100+diffusivity_spread)/100,6)]
-if Param.n_model > 1 % make spread of models
-diffusivity = linspace(diffusivity_bl*(100-diffusivity_spread)/100,diffusivity_bl*(100+diffusivity_spread)/100,Param.n_model);
-else 
-    diffusivity = diffusivity_bl; % use single value
-end
-kdo = (diffusivity).^2*3600*24*365*1;	% mixed layer to deep ocean diffusivity	(m2/y)
-
-w_bl = 0;                           % overturning
-w_dist = 1;                         % uniform
-w_spread = 0;                       % +/- 0%
-w = IAGP_return_MC_par(Param.n_model,w_bl,w_dist,w_spread);
-
-th_bl = 0;                          % upwelling
-th_dist = 1;                        % uniform
-th_spread = 0;                      % +/- 0%
-th = IAGP_return_MC_par(Param.n_model,th_bl,th_dist,th_spread);
-
-% PI_bl change history
-PI_bl = Param.PI_bl;      % NH temp to sea ice extent coefficient
-PI_dist = 1;                        % uniform
-PI_spread = 0;                     % +/- 0%
-PI = IAGP_return_MC_par(Param.n_model,PI_bl,PI_dist,PI_spread);
-
-phi_bl = Param.phi_bl; % originally -0.2   % SO2 to emissions to forcing coefficient
-phi_dist = 1;                       % uniform
-phi_spread = 0;                    % +/- 10%
-phi = IAGP_return_MC_par(Param.n_model,phi_bl,phi_dist,phi_spread);
-
-% NH ocean fraction (1 - northern hemisphere land)
-fno = 1-fnl;
-
-% SH ocean fraction (1 - southern hemisphere land)
-fso = 1-fsl;
-
-% effective bulk heat capacity of mixed layer (W*year/m^2/C)
-cm = rho*cp.*hm./3600/24/365;
+th = 1;                             % upwelling
 
 
-
-
-
+%% define MagicC discretisation parameters
+Param.nL = 40;    % number of ocean layers
+Param.dt = 0.1;   % fraction of year for time step
+Param.dz = 100;   % depth of ocean layers 
 %% Build state space models
 
 dz = Param.dz;
@@ -298,43 +244,49 @@ nL = Param.nL;
 dt = Param.dt;
 
 for mc = 1:Param.n_model
+    %% Ensemble physical parameters for MagicC
+    
+    VARIABLE_PARS = IAGP_MAGICC_get_lambdas_and_diffusivity(Param.two_x_CO2_eq_T(mc),Param.trans_clim_response(mc),0,Param.RLO(mc)) 
+    ll = VARIABLE_PARS.ll;              % land longwave outgoing feedback parameter (W/m^2/C)
+    lo = VARIABLE_PARS.lo;              % ocean longwave outgoing feedback parameter (W/m^2/C)
+    w = VARIABLE_PARS.w;                % overturning
+    kdo = VARIABLE_PARS.kdo;            % mixed layer to deep ocean diffusivity	(m^2/y)
     % build the state space model
     % build state space model
     %---------------------------------
     
     
-    
     %Northern hemisphere
-    AN = 1 + (klo(mc).^2/fno(mc)/cm(mc)/(klo(mc)+fnl(mc)*ll(mc))...
-        - lo(mc)/cm(mc) - kdo(mc)/hm(mc)/0.5/dz...
-        - w(mc)*th(mc)/hm(mc) - kns(mc)/fno(mc)/cm(mc) - klo(mc)/fno(mc)/cm(mc))*dt;
-    BN = (1/cm(mc) + klo(mc)*fnl(mc)/fno(mc)/cm(mc)/(klo(mc)+fnl(mc)*ll(mc)))*dt;
-    CN = (kdo(mc)/hm(mc)/0.5/dz + w(mc)/hm(mc))*dt;
-    DN = (kns(mc)/cm(mc)/fno(mc))*dt;
-    EN = klo(mc)/(fnl(mc)*ll(mc)+klo(mc));
-    FN = fnl(mc)/(fnl(mc)*ll(mc)+klo(mc));
+    AN = 1 + (klo.^2/fno/cm/(klo+fnl*ll)...
+        - lo/cm - kdo/hm/0.5/dz...
+        - w*th/hm - kns/fno/cm - klo/fno/cm)*dt;
+    BN = (1/cm + klo*fnl/fno/cm/(klo+fnl*ll))*dt;
+    CN = (kdo/hm/0.5/dz + w/hm)*dt;
+    DN = (kns/cm/fno)*dt;
+    EN = klo/(fnl*ll+klo);
+    FN = fnl/(fnl*ll+klo);
     
     %Southern hemisphere
-    AS = 1 + (klo(mc)^2/fso(mc)/cm(mc)/(klo(mc)+fsl(mc)*ll(mc))...
-        - lo(mc)/cm(mc) - kdo(mc)/hm(mc)/0.5/dz...
-        - w(mc)*th(mc)/hm(mc) - kns(mc)/fso(mc)/cm(mc)...
-        - klo(mc)/fso(mc)/cm(mc))*dt;
-    BS = (1/cm(mc) + klo(mc)*fsl(mc)/fso(mc)/cm(mc)/(klo(mc)+fsl(mc)*ll(mc)))*dt;
-    CS = (kdo(mc)/hm(mc)/0.5/dz + w(mc)/hm(mc))*dt;
-    DS = (kns(mc)/cm(mc)/fso(mc))*dt;
-    ES = klo(mc)/(fsl(mc)*ll(mc)+klo(mc));
-    FS = fsl(mc)/(fsl(mc)*ll(mc)+klo(mc));
+    AS = 1 + (klo^2/fso/cm/(klo+fsl*ll)...
+        - lo/cm - kdo/hm/0.5/dz...
+        - w*th/hm - kns/fso/cm...
+        - klo/fso/cm)*dt;
+    BS = (1/cm + klo*fsl/fso/cm/(klo+fsl*ll))*dt;
+    CS = (kdo/hm/0.5/dz + w/hm)*dt;
+    DS = (kns/cm/fso)*dt;
+    ES = klo/(fsl*ll+klo);
+    FS = fsl/(fsl*ll+klo);
     
     %Ocean
-    AO = (1-dt*(kdo(mc)/0.5/dz/dz+kdo(mc)/dz/dz+w(mc)/dz));
-    BO = dt*(kdo(mc)/0.5/dz/dz);
-    CO = dt*(kdo(mc)/dz/dz+w(mc)/dz);
-    DO = (1-dt*(2*kdo(mc)/dz/dz+w(mc)/dz));
-    EO = dt*(kdo(mc)/dz/dz);
-    FO = dt*(kdo(mc)/dz/dz+w(mc)/dz);
-    GO = (1-dt*(kdo(mc)/dz/dz+w(mc)/dz));
-    HO = dt*(kdo(mc)/dz/dz);
-    IO = dt*(th(mc)*w(mc)/dz);
+    AO = (1-dt*(kdo/0.5/dz/dz+kdo/dz/dz+w/dz));
+    BO = dt*(kdo/0.5/dz/dz);
+    CO = dt*(kdo/dz/dz+w/dz);
+    DO = (1-dt*(2*kdo/dz/dz+w/dz));
+    EO = dt*(kdo/dz/dz);
+    FO = dt*(kdo/dz/dz+w/dz);
+    GO = (1-dt*(kdo/dz/dz+w/dz));
+    HO = dt*(kdo/dz/dz);
+    IO = dt*(th*w/dz);
     
     %------------------------------
     %State space version
@@ -386,31 +338,20 @@ for mc = 1:Param.n_model
     
     
     Cleft = zeros(2,nL);
-    Cleft(1,1) = (fno(mc) + fnl(mc)*EN);
+    Cleft(1,1) = (fno + fnl*EN);
     
     % construct right side of C matrix together
     Cright = zeros(2,nL);
-    Cright(2,1) = (fso(mc) + fsl(mc)*ES);
+    Cright(2,1) = (fso + fsl*ES);
     
     % put together the C matrix
     Param.C(:,:,mc) = [Cleft Cright];
     
     
     % the new 2 state D matrix
-    Param.D(:,:,mc) = [(fnl(mc)*FN)              0;...
-                            0   (fsl(mc)*FS)];
+    Param.D(:,:,mc) = [(fnl*FN)              0;...
+                            0   (fsl*FS)];
 end
-
-%% get 2 x CO2 eq. temp response and transient climate response for each model
-Param.two_x_CO2_eq_T = zeros(1,Param.n_model);
-Param.trans_clim_response = zeros(1,Param.n_model);
-for i = 1:Param.n_model
-    [L,tcr] = IAGP_get_lambda_and_tcr( Param.A(:,:,i), Param.B(:,:,1), Param.C(:,:,i), Param.D(:,:,i),...
-        Param.nL, Param.dt );
-Param.two_x_CO2_eq_T(i) = L;
-Param.trans_clim_response(i) = tcr;
-end
-
 
 
 %% Save the model parameter sets into the base directory
